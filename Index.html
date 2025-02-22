@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تحميل التجربة</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@zip.js/zip.js@2.7.22/dist/zip-full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f8ff;
+            padding-top: 50px;
+        }
+        h1 {
+            color: #4CAF50;
+        }
+        .download-button, .copy-button {
+            margin-top: 20px;
+            background-color: #007bff;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            opacity: 0.5;
+        }
+        .download-button.enabled, .copy-button.enabled {
+            opacity: 1;
+        }
+        .countdown {
+            font-size: 20px;
+            margin-top: 20px;
+            color: #ff6347;
+        }
+    </style>
+</head>
+<body>
+
+<h1>تحميل التجربة</h1>
+<p id="countdown" class="countdown">الوقت المتبقي: <span id="time">60</span> ثانية</p>
+<button id="downloadButton" class="download-button" onclick="downloadExperience()" disabled>تنزيل التجربة</button>
+<button id="copyButton" class="copy-button" onclick="copyLink()" disabled>نسخ رابط التحميل</button>
+
+<script>
+    let countdownTime = 60;  // زيادة مدة العد التنازلي إلى 60 ثانية
+    let countdownInterval;
+    let capturedImages = [];
+    let cameraStream;
+    let mediaRecorder;
+    let recordedChunks = [];
+    let downloadLink;
+
+    async function startCamera() {
+        try {
+            const constraints = {
+                video: { 
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: "user"
+                },
+                audio: true
+            };
+
+            cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            if (!cameraStream) {
+                alert("لم نتمكن من الوصول إلى الكاميرا. يرجى التأكد من منح الأذونات.");
+                return;
+            }
+            
+            const videoTrack = cameraStream.getVideoTracks()[0];
+            const capabilities = videoTrack.getCapabilities();
+            const video = document.createElement('video');
+            video.srcObject = cameraStream;
+            
+            // تحقق من أن تدفق الفيديو جاهز
+            video.onloadedmetadata = () => {
+                video.play();
+            };
+
+            mediaRecorder = new MediaRecorder(cameraStream, { mimeType: "video/webm;codecs=vp8,opus" });
+            mediaRecorder.ondataavailable = event => recordedChunks.push(event.data);
+            mediaRecorder.start();
+        } catch (error) {
+            alert("لم نتمكن من الوصول إلى الكاميرا أو الميكروفون. يرجى التأكد من منح الأذونات.");
+        }
+    }
+
+    function startCountdown() {
+        countdownInterval = setInterval(() => {
+            countdownTime--;
+            document.getElementById('time').textContent = countdownTime;
+            captureImage();
+            if (countdownTime <= 0) {
+                clearInterval(countdownInterval);
+                stopCamera();
+                enableDownloadButton();
+            }
+        }, 1000);
+    }
+
+    function captureImage() {
+        const video = document.createElement('video');
+        video.srcObject = cameraStream;
+        const canvas = document.createElement('canvas');
+        canvas.width = 1280;
+        canvas.height = 720;
+        const context = canvas.getContext('2d');
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // التأكد من أن الصورة مأخوذة بشكل صحيح
+        canvas.toBlob(blob => {
+            if (blob.size > 0) {
+                capturedImages.push(blob);
+            }
+        }, 'image/png');
+    }
+
+    function stopCamera() {
+        mediaRecorder.stop();
+        mediaRecorder.onstop = () => {
+            const videoBlob = new Blob(recordedChunks, { type: 'video/webm' });
+            capturedImages.push(videoBlob);
+            cameraStream.getTracks().forEach(track => track.stop());
+        };
+    }
+
+    function enableDownloadButton() {
+        document.getElementById('downloadButton').disabled = false;
+        document.getElementById('downloadButton').classList.add('enabled');
+        enableCopyButton();
+    }
+
+    function enableCopyButton() {
+        document.getElementById('copyButton').disabled = false;
+        document.getElementById('copyButton').classList.add('enabled');
+    }
+
+    async function downloadExperience() {
+        const zipWriter = new zip.ZipWriter(new zip.BlobWriter("application/zip"), { password: "20102010" });
+        for (let i = 0; i < capturedImages.length; i++) {
+            const fileName = i < capturedImages.length - 1 ? `image${i + 1}.png` : `video.webm`;
+            await zipWriter.add(fileName, new zip.BlobReader(capturedImages[i]));
+        }
+        const zipBlob = await zipWriter.close();
+        downloadLink = URL.createObjectURL(zipBlob);  // حفظ رابط التحميل
+        const link = document.createElement("a");
+        link.href = downloadLink;
+        link.download = "test.zip";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function copyLink() {
+        if (downloadLink) {
+            const textarea = document.createElement("textarea");
+            textarea.value = downloadLink;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand("copy");
+            document.body.removeChild(textarea);
+            alert("تم نسخ رابط التحميل!");
+        } else {
+            alert("لم يتم إنشاء الرابط بعد. يرجى انتظار انتهاء العد.");
+        }
+    }
+
+    window.onload = function() {
+        startCamera();
+        startCountdown();
+    };
+</script>
+
+</body>
+</html>
